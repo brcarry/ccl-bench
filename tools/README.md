@@ -21,5 +21,12 @@
 
 4. Calculate metrics
 
+    ```
+    python main.py --trace=<trace directory> --metric=<name of metric>
+    # or use scripts
+    ./scripts/get_<name of metric>.sh
+    ```
 
+## Current list of metrics
 
+1. `coll_call_num`: number of NCCL communication calls from one GPU in one iteration 

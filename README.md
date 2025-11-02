@@ -8,11 +8,20 @@ pip install -r requirements.txt
 ```
 
 ## Process FLow
-
+`#TODO: add guidelines for each step`
 1. Run workload
-2. Profile
-3. Generate traces, store traces, attach metadata, upload to repository
+2. Profile, generate traces
+3. Store traces, attach metadata, upload to repository
 4. Define metrics
 5. Develop tools
 6. Calculate metrics
 7. Upload metrics
+
+## Layout
+```
+├── README.md
+├── requirements.txt
+├── scripts  # scripts to execute tools for different metrics
+├── tools   # main.py, and various plug-ins for different metrics
+└── trace_collection # place to store temparary traces locally, which are downloaded from Google Drive.
+```

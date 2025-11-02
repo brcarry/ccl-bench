@@ -1,8 +1,3 @@
-# Torch trace collection and simulation
+# llama3-8B_torchtitan_perlmutter
 
-## Generate trace from PyTorch model
-
-https://github.com/mlcommons/chakra/wiki/Chakra-Execution-Trace-Collection-%E2%80%90-A-Comprehensive-Guide-on-Merging-PyTorch-and-Kineto-Traces
-
-The workload configuration is located in `8b_tp_4_dp_2_pp_2_cp_1_training_astra.sh`
-
+https://drive.google.com/file/d/1EK_YROAho2sBvYVn8idF6DbnaG3SZ0he/view
