@@ -1,0 +1,58 @@
+# workload_template.yaml
+version: 1
+
+description: >
+  Template for Transformer model workload characterization.
+  Example: Llama3 8B on 16 GPUs with hierarchical parallelism.
+
+workload_definition:
+  phase: training            # {training, inference}
+  moe: false                 # {true, false}
+  granularity: model_fwd_bwd_pass   # {model_fwd_bwd_pass, attention_kernel, single_op}
+  model_family: llama-3.1-8b        # {llama-3.1-8b, deepseek-llama-8b, granite-3.2-8b, qwen-7b}
+  floating_point_precision: bf16    # {fp32, bf16, fp16, fp8}
+
+framework: torchtitan        # {torchtitan, megatron-lm, deepspeed, vllm, sglang}
+
+communication_library:
+  name: NCCL                 # {NCCL, NCCLX, NVSHMEM, RCCL, MSCCL, torchcomms}
+  tunable_env_vars:          # (Optional examples, no values populated)
+    - NCCL_IB_QPS_PER_CONNECTION
+    - NCCL_NET_GDR_LEVEL
+    - NCCL_SOCKET_IFNAME
+
+protocol_selection:          # choose any applicable
+  - rocev2
+  - gpudirect
+  # - infiniband
+  # - tcp
+
+compiler_tool_selection: plain_pytorch  # {plain_pytorch, torch.compile, mpk, triton-distributed, thunderkitten}
+
+network_topology_bandwidth_latency:
+  topology: slingshot        # {slingshot, rail-optimized, tree}
+  bandwidth_gbps:            # representative values only, not data
+    - 200
+    - 1600
+  latency_unit: us           # {us, ns}
+
+xpu_specification:
+  type: gpu                  # {gpu, tpu, cpu, trainium}
+  model: nvidia_a100         # {nvidia_a100, nvidia_h100, tpu_v4}
+  total_count: 16
+  count_per_node: 4
+
+model_plan_parallelization:
+  dp_replicate: 1
+  dp_shard: 2
+  tp: 4
+  pp: 2
+  cp: 1
+  world_size: 16             # derived (1×2×4×2×1)
+
+tracing:
+  traces:
+    - nsys
+    - torch_et
+    - kineto_cpu_trace
+    - metrics_specific
