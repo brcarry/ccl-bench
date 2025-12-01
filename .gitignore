@@ -28,6 +28,9 @@ _remote_module_non_scriptable.py
 
 env
 
+
+nsys/*
+proposal.txt
 nsys-res/*
 topology.xml
 # Editor temporaries (VIM)
