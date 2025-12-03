@@ -20,8 +20,8 @@ Examples:
     # Export results
     python analyze_trace.py ../../nsys --output results.json --csv results.csv
     
-    # Specify workload name
-    python analyze_trace.py ../../nsys --name llama-3.1-8b-1n4g
+    # Specify workload name and parallelism config
+    python analyze_trace.py ../../nsys --name llama-3.1-8b-1n4g --dp 8 --tp 1 --pp 1 --ep 1
 """
 
 import os
@@ -36,7 +36,7 @@ import iteration_time_analyzer
 import comm_time_breakdown
 import comm_compute_overlap
 import phase_window_analyzer
-import bandwidth_utilization_analyzer
+import bandwidth_model_analyzer  # Use new ring model analyzer
 
 # Define all available metrics
 AVAILABLE_METRICS = {
@@ -66,10 +66,18 @@ AVAILABLE_METRICS = {
         'description': 'Analyze time gaps between parallelism phases'
     },
     'bandwidth': {
-        'name': 'Bandwidth Utilization',
-        'module': bandwidth_utilization_analyzer,
-        'description': 'Calculate per-event bandwidth utilization'
+        'name': 'Bandwidth Utilization (Ring Model)',
+        'module': bandwidth_model_analyzer,
+        'description': 'Calculate bandwidth utilization using ring collective model'
     }
+}
+
+# Global parallelism config (set from command line)
+PARALLELISM_CONFIG = {
+    'dp_size': 1,
+    'tp_size': 1,
+    'pp_size': 1,
+    'ep_size': 1
 }
 
 def print_header(text):
@@ -189,7 +197,15 @@ def run_metric(metric_key, nsys_path, is_single_file):
                 results = None
         elif metric_key == 'bandwidth':
             if trace_file:
-                results = metric_info['module'].analyze_bandwidth_utilization(trace_file)
+                # Use ring model analyzer with parallelism config and hardware bandwidth
+                results = metric_info['module'].analyze_bandwidth_with_model(
+                    trace_file,
+                    dp_size=PARALLELISM_CONFIG['dp_size'],
+                    tp_size=PARALLELISM_CONFIG['tp_size'],
+                    pp_size=PARALLELISM_CONFIG['pp_size'],
+                    ep_size=PARALLELISM_CONFIG['ep_size'],
+                    hardware_bw=PARALLELISM_CONFIG.get('hardware_bw', 100e9)
+                )
             else:
                 results = None
         else:
@@ -262,6 +278,8 @@ def export_csv(results, csv_file):
         print(f"✗ Failed to export CSV: {e}")
 
 def main():
+    global PARALLELISM_CONFIG
+    
     parser = argparse.ArgumentParser(
         description='Unified trace analyzer for nsys profiling data',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -279,8 +297,8 @@ Examples:
   # Export analysis results
   python analyze_trace.py ../../nsys --output results.json --csv summary.csv
   
-  # Specify workload name
-  python analyze_trace.py ../../nsys --name llama-3.1-8b-1n4g
+  # Specify workload name and parallelism config
+  python analyze_trace.py ../../nsys --name llama-3.1-8b --dp 8 --tp 1 --pp 1 --ep 1
 
 Available metrics:
   nccl_calls      - NCCL communication call statistics
@@ -288,7 +306,7 @@ Available metrics:
   comm_breakdown  - Communication time breakdown by type
   overlap         - Communication-computation overlap analysis
   phase_windows   - Parallelism phase window analysis
-  bandwidth       - Bandwidth utilization analysis
+  bandwidth       - Bandwidth utilization with ring model
         """
     )
     
@@ -299,7 +317,24 @@ Available metrics:
     parser.add_argument('--csv', help='Output CSV file path (append mode)')
     parser.add_argument('--list', action='store_true', help='List available metrics and exit')
     
+    # Parallelism configuration
+    parser.add_argument('--dp', type=int, default=1, help='Data parallel size (default: 1)')
+    parser.add_argument('--tp', type=int, default=1, help='Tensor parallel size (default: 1)')
+    parser.add_argument('--pp', type=int, default=1, help='Pipeline parallel size (default: 1)')
+    parser.add_argument('--ep', type=int, default=1, help='Expert parallel size (default: 1)')
+    
+    # Hardware configuration
+    parser.add_argument('--bw', type=float, default=100.0, 
+                        help='Hardware bandwidth in GB/s (default: 100 for NVLink NV4)')
+    
     args = parser.parse_args()
+    
+    # Set global parallelism config
+    PARALLELISM_CONFIG['dp_size'] = args.dp
+    PARALLELISM_CONFIG['tp_size'] = args.tp
+    PARALLELISM_CONFIG['pp_size'] = args.pp
+    PARALLELISM_CONFIG['ep_size'] = args.ep
+    PARALLELISM_CONFIG['hardware_bw'] = args.bw * 1e9  # Convert GB/s to bytes/s
     
     # List metrics and exit
     if args.list:
@@ -335,6 +370,8 @@ Available metrics:
         print(f"Mode: Directory")
         print(f"Directory: {args.nsys_path}")
         print(f"Trace files: {', '.join(trace_files)}")
+    print(f"Parallelism config: DP={args.dp}, TP={args.tp}, PP={args.pp}, EP={args.ep}")
+    print(f"Hardware bandwidth: {args.bw} GB/s")
     print(f"Metrics to run: {', '.join(metrics_to_run)}")
     
     # Run all selected metrics
@@ -344,6 +381,13 @@ Available metrics:
     results['is_single_file'] = is_single_file
     results['num_traces'] = 1 if is_single_file else len(trace_files)
     results['trace_files'] = [os.path.basename(args.nsys_path)] if is_single_file else trace_files
+    results['parallelism_config'] = {
+        'dp_size': args.dp,
+        'tp_size': args.tp,
+        'pp_size': args.pp,
+        'ep_size': args.ep,
+        'hardware_bw_gbps': args.bw
+    }
     
     for metric_key in metrics_to_run:
         metric_results = run_metric(metric_key, args.nsys_path, is_single_file)
