@@ -36,7 +36,7 @@ import iteration_time_analyzer
 import comm_time_breakdown
 import comm_compute_overlap
 import phase_window_analyzer
-import bandwidth_model_analyzer  # Use new ring model analyzer
+import traffic_interval_analyzer
 
 # Define all available metrics
 AVAILABLE_METRICS = {
@@ -65,10 +65,10 @@ AVAILABLE_METRICS = {
         'module': phase_window_analyzer,
         'description': 'Analyze time gaps between parallelism phases'
     },
-    'bandwidth': {
-        'name': 'Bandwidth Utilization (Ring Model)',
-        'module': bandwidth_model_analyzer,
-        'description': 'Calculate bandwidth utilization using ring collective model'
+    'traffic_interval': {
+        'name': 'Traffic Interval Analysis',
+        'module': traffic_interval_analyzer,
+        'description': 'Analyze call intervals and durations for each NCCL operation type'
     }
 }
 
@@ -170,16 +170,8 @@ def run_metric_for_file(metric_key, trace_file):
                 results = None
         elif metric_key == 'phase_windows':
             results = metric_info['module'].analyze_phase_windows(trace_file)
-        elif metric_key == 'bandwidth':
-            # Use ring model analyzer with parallelism config and hardware bandwidth
-            results = metric_info['module'].analyze_bandwidth_with_model(
-                trace_file,
-                dp_size=PARALLELISM_CONFIG['dp_size'],
-                tp_size=PARALLELISM_CONFIG['tp_size'],
-                pp_size=PARALLELISM_CONFIG['pp_size'],
-                ep_size=PARALLELISM_CONFIG['ep_size'],
-                hardware_bw=PARALLELISM_CONFIG.get('hardware_bw', 100e9)
-            )
+        elif metric_key == 'traffic_interval':
+            results = metric_info['module'].analyze_traffic_intervals(trace_file)
         else:
             results = None
         
@@ -283,23 +275,6 @@ def aggregate_results(per_rank_results):
             'max_overlap_percentage': max(overlap_ratios)
         }
     
-    # Collect bandwidth utilization
-    bw_utils = []
-    for rank_id, rank_data in per_rank_results.items():
-        bw_data = rank_data.get('bandwidth')
-        if bw_data and bw_data.get('summary'):
-            avg_util = bw_data['summary'].get('avg_utilization_pct')
-            if avg_util is not None:
-                bw_utils.append(avg_util)
-    
-    if bw_utils:
-        aggregated['bandwidth'] = {
-            'num_ranks': len(bw_utils),
-            'avg_utilization_pct': sum(bw_utils) / len(bw_utils),
-            'min_utilization_pct': min(bw_utils),
-            'max_utilization_pct': max(bw_utils)
-        }
-    
     return aggregated
 
 def export_results(results, output_file):
@@ -379,12 +354,12 @@ Examples:
   python analyze_trace.py ../../nsys --name llama-3.1-8b --dp 8 --tp 1 --pp 1 --ep 1
 
 Available metrics:
-  nccl_calls      - NCCL communication call statistics
-  iteration_time  - Iteration timing statistics (mean, P99)
-  comm_breakdown  - Communication time breakdown by type
-  overlap         - Communication-computation overlap analysis
-  phase_windows   - Parallelism phase window analysis
-  bandwidth       - Bandwidth utilization with ring model
+  nccl_calls        - NCCL communication call statistics
+  iteration_time    - Iteration timing statistics (mean, P99)
+  comm_breakdown    - Communication time breakdown by type
+  overlap           - Communication-computation overlap analysis
+  phase_windows     - Parallelism phase window analysis
+  traffic_interval  - Call intervals and durations per operation type
         """
     )
     
@@ -401,10 +376,6 @@ Available metrics:
     parser.add_argument('--pp', type=int, default=1, help='Pipeline parallel size (default: 1)')
     parser.add_argument('--ep', type=int, default=1, help='Expert parallel size (default: 1)')
     
-    # Hardware configuration
-    parser.add_argument('--bw', type=float, default=100.0, 
-                        help='Hardware bandwidth in GB/s (default: 100 for NVLink NV4)')
-    
     args = parser.parse_args()
     
     # Set global parallelism config
@@ -412,7 +383,6 @@ Available metrics:
     PARALLELISM_CONFIG['tp_size'] = args.tp
     PARALLELISM_CONFIG['pp_size'] = args.pp
     PARALLELISM_CONFIG['ep_size'] = args.ep
-    PARALLELISM_CONFIG['hardware_bw'] = args.bw * 1e9  # Convert GB/s to bytes/s
     
     # List metrics and exit
     if args.list:
@@ -451,7 +421,6 @@ Available metrics:
         for tf in trace_files:
             print(f"  - {tf}")
     print(f"Parallelism config: DP={args.dp}, TP={args.tp}, PP={args.pp}, EP={args.ep}")
-    print(f"Hardware bandwidth: {args.bw} GB/s")
     print(f"Metrics to run: {', '.join(metrics_to_run)}")
     
     # Build results structure
@@ -465,8 +434,7 @@ Available metrics:
         'dp_size': args.dp,
         'tp_size': args.tp,
         'pp_size': args.pp,
-        'ep_size': args.ep,
-        'hardware_bw_gbps': args.bw
+        'ep_size': args.ep
     }
     
     if is_single_file:
@@ -530,9 +498,6 @@ Available metrics:
         if agg.get('overlap'):
             ov = agg['overlap']
             print(f"  Overlap: avg={ov['avg_overlap_percentage']:.2f}%")
-        if agg.get('bandwidth'):
-            bw = agg['bandwidth']
-            print(f"  Bandwidth Util: avg={bw['avg_utilization_pct']:.2f}%")
     
     # Export results if requested
     if args.output:

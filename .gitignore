@@ -8,6 +8,9 @@ dist/*
 .vscode
 .vs
 
+.nsys-rep
+.sqlite
+
 # data
 data
 out
